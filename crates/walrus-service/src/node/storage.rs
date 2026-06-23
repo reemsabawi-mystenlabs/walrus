@@ -44,6 +44,7 @@ use self::{
         PerObjectBlobInfoIterator,
         PerObjectPooledBlobInfo,
     },
+    blob_info_snapshot::{SnapshotError, SnapshotHeader, SnapshotStats},
     constants::{
         garbage_collector_last_completed_epoch_key,
         garbage_collector_last_started_epoch_key,
@@ -66,6 +67,7 @@ use super::{
 use crate::utils::{self, BatchProcessingResult};
 
 pub(crate) mod blob_info;
+pub(crate) mod blob_info_snapshot;
 pub(crate) mod constants;
 
 mod database_config;
@@ -473,6 +475,19 @@ impl Storage {
 
     pub(crate) fn clear_blob_info_table(&self) -> Result<(), TypedStoreError> {
         self.blob_info.clear()
+    }
+
+    /// Serializes the three snapshotted blob info column families from the running node's database
+    /// into `writer`, returning serialization statistics. Must be called at the post-GC-phase-1
+    /// epoch boundary while event processing is blocked, so the tables are at the deterministic
+    /// point shared across honest nodes. See [`blob_info::BlobInfoTable::write_snapshot`] for the
+    /// engine-snapshot read that keeps the three column families mutually consistent.
+    pub(crate) fn write_blob_info_snapshot<W: std::io::Write>(
+        &self,
+        header: &SnapshotHeader,
+        writer: W,
+    ) -> Result<SnapshotStats, SnapshotError> {
+        self.blob_info.write_snapshot(header, writer)
     }
 
     /// Returns lock write access to the shards map, and returns the underlying shard map.
